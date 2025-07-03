@@ -1,0 +1,55 @@
+# agent_config.ps1.template - Configuration for the Net-Insight Monitor Windows Agent
+# This file is dot-sourced by the main monitoring script. Use PowerShell variable syntax.
+# Example: $script:VARIABLE_NAME = "value" or $script:ARRAY_VAR = @("value1", "value2")
+
+# --- CRITICAL CONFIGURATION ---
+# IMPORTANT: These three values MUST be configured correctly for the agent to work.
+
+# The unique identifier for this agent. This should be a descriptive, URL-safe string.
+# Example: $script:AGENT_IDENTIFIER = "Win-Laptop-Sales-05"
+$script:AGENT_IDENTIFIER = "<REPLACE_WITH_UNIQUE_ID>"
+
+# The full URL to the submission API on your central Net-Insight Monitor server.
+# Example for Production: $script:CENTRAL_API_URL = "https://monitor.yourcompany.com/api/submit_metrics.php"
+# Example for Development: $script:CENTRAL_API_URL = "http://192.168.1.100:8080/api/submit_metrics.php"
+$script:CENTRAL_API_URL = "<REPLACE_WITH_YOUR_SERVER_URL>"
+
+# The secret API key for this agent. This key must be generated on the central server
+# and assigned to a profile that matches the AGENT_IDENTIFIER above.
+$script:CENTRAL_API_KEY = "<PASTE_AGENT_API_KEY_HERE>"
+
+
+# --- GENERAL CONFIGURATION ---
+
+# The type of agent. This helps categorize agents on the dashboard.
+# Recommended values: "ISP" or "Client".
+$script:AGENT_TYPE = "Client"
+
+
+# --- TEST-SPECIFIC CONFIGURATION ---
+
+# An array of reliable hosts to ping for connectivity and latency checks.
+# It is recommended to use a mix of IP addresses and domain names.
+$script:PING_HOSTS = @("8.8.8.8", "1.1.1.1", "google.com")
+$script:PING_COUNT = 10
+
+# The host to use for DNS resolution checks.
+$script:DNS_CHECK_HOST = "www.google.com"
+
+# The URL to use for HTTP availability and response time checks.
+$script:HTTP_CHECK_URL = "https://www.google.com"
+
+# The full path to the speedtest.exe executable.
+# This variable is automatically added by the setup_agent_windows.ps1 script.
+# DO NOT EDIT THIS LINE MANUALLY unless you have a custom installation.
+$script:SPEEDTEST_EXE_PATH = ""
+
+
+# --- FEATURE FLAGS ---
+# Set any of these to $false to disable the respective test for this agent.
+
+$script:ENABLE_PING = $true
+$script:ENABLE_DNS = $true
+$script:ENABLE_HTTP = $true
+$script:ENABLE_SPEEDTEST = $true
+$script:ENABLE_WIFI = $true

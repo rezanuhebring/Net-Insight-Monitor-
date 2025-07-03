@@ -1,0 +1,358 @@
+<?php
+// Session check: This must be at the very top of the file.
+session_start();
+if (!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true) {
+    header('location: login.php');
+    exit;
+}
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Net-Insight Monitor</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js" defer></script>
+    <style>
+        :root { --bg-color: #f0f2f5; --card-bg: #ffffff; --text-color: #333; --header-color: #1a237e; --border-color: #e0e0e0; --link-color: #007bff; --shadow-color: rgba(0,0,0,0.1); --green: #28a745; --red: #dc3545; --orange: #fd7e14; --grey: #6c757d; --progress-bg: #e9ecef;}
+        .dark-mode { --bg-color: #121212; --card-bg: #1e1e1e; --text-color: #e0e0e0; --header-color: #bb86fc; --border-color: #444; --link-color: #bb86fc; --shadow-color: rgba(0,0,0,0.4); --progress-bg: #333; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 20px; background-color: var(--bg-color); color: var(--text-color); transition: background-color 0.3s, color 0.3s; }
+        .dashboard-container { max-width: 1400px; margin: 0 auto; background-color: var(--card-bg); padding: 25px; border-radius: 8px; box-shadow: 0 4px 12px var(--shadow-color); }
+        h1 { font-size: 2em; margin: 0; color: var(--header-color); } h2 { font-size: 1.5em; margin-top: 30px; margin-bottom: 20px; text-align: left; border-bottom: 1px solid var(--border-color); padding-bottom: 10px;}
+        .top-bar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;}
+        .header-actions { display: flex; align-items: center; gap: 20px; }
+        .logout-button { padding: 8px 15px; font-size: 0.9em; font-weight: 500; color: #fff; background-color: var(--red); border: none; border-radius: 5px; text-decoration: none; cursor: pointer; transition: background-color 0.2s;}
+        .logout-button:hover { background-color: #c82333; }
+        .top-info { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid var(--border-color); flex-wrap: wrap; gap: 15px; }
+        .selector-group { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+        .selector-group label { font-weight: 500; }
+        .selector-group select, .time-period-selector button { padding: 8px 12px; border-radius: 4px; border: 1px solid var(--border-color); font-size: 1em; background-color: var(--card-bg); color: var(--text-color); cursor: pointer; }
+        .selector-group select { flex-grow: 1; min-width: 250px; }
+        .time-period-selector button.active { background-color: var(--link-color); color: white; border-color: var(--link-color); }
+        .theme-switcher { display: flex; align-items: center; cursor: pointer; } .theme-switcher-label { margin-right: 8px; font-weight: 500;}
+        .switch { position: relative; display: inline-block; width: 44px; height: 24px; } .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 24px; }
+        .slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 4px; bottom: 4px; background-color: white; transition: .4s; border-radius: 50%; }
+        input:checked + .slider { background-color: var(--link-color); } input:checked + .slider:before { transform: translateX(20px); }
+        .download-button-container { text-align: center; margin: 20px 0; } 
+        .download-button { display: inline-block; padding: 10px 20px; font-size: 1em; font-weight: bold; color: #fff; background-color: var(--link-color); border: none; border-radius: 5px; text-decoration: none; cursor: pointer; }
+        .agent-lists-container { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .agent-list { list-style-type: none; padding: 0; }
+        .agent-list-item { background-color: var(--bg-color); margin-bottom: 10px; padding: 15px; border-radius: 6px; border-left: 5px solid var(--grey); cursor: pointer; transition: transform 0.2s, box-shadow 0.2s; }
+        .agent-list-item:hover { transform: translateY(-3px); box-shadow: 0 4px 8px rgba(0,0,0,0.08); }
+        .agent-list-item.status-up { border-left-color: var(--green); } .agent-list-item.status-down { border-left-color: var(--red); } .agent-list-item.status-stale { border-left-color: var(--orange); }
+        .agent-header { display: flex; justify-content: space-between; align-items: center; }
+        .agent-name { font-weight: bold; font-size: 1.1em; color: var(--link-color); }
+        .agent-metrics-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px 15px; font-size: 0.9em; padding-top: 10px; opacity: 0.9; }
+        .agent-sparkline { margin-top: 10px; } .agent-sparkline svg { stroke: var(--link-color); stroke-width: 2; fill: none; }
+        .hidden { display: none !important; }
+        .loader { border: 5px solid var(--border-color); border-top: 5px solid var(--link-color); border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 50px auto; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .grid-container { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; }
+        .card { background-color: var(--bg-color); padding: 20px; border-radius: 8px; }
+        .card h3 { margin-top: 0; padding-bottom: 10px; font-size: 1.2em; border-bottom: 1px solid var(--border-color); }
+        .card p { margin: 10px 0; font-size: 1em; display: flex; justify-content: space-between; } .card strong { font-weight: 600; }
+        .chart-card { grid-column: 1 / -1; }
+        .chart-container { width: 100%; height: 350px; }
+        .key-metric-card { text-align: center; }
+        .key-metric-value { font-size: 2.5em; font-weight: 700; color: var(--header-color); }
+        .key-metric-label { font-size: 1em; opacity: 0.8; margin-top: 5px; }
+        .key-metric-value .down { color: var(--red); } .key-metric-value .stale { color: var(--orange); }
+        .sla-period-item { padding: 12px 0; border-bottom: 1px dashed var(--border-color); } .sla-period-item:last-child { border-bottom: none; }
+        .sla-label-percent { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-weight: 500; }
+        .sla-progress-bar { height: 10px; background-color: var(--progress-bg); border-radius: 5px; overflow: hidden; }
+        .sla-progress-bar-inner { height: 100%; width: 0%; border-radius: 5px; background-color: var(--grey); transition: width 0.5s ease-in-out; }
+        .sla-progress-bar-inner.met { background-color: var(--green); } .sla-progress-bar-inner.not-met { background-color: var(--red); }
+        @media (max-width: 800px) { h1 {font-size: 1.5em;} .top-info, .top-bar { flex-direction: column; align-items: stretch; text-align: center; } .selector-group { justify-content: center;} .agent-lists-container {grid-template-columns: 1fr;} }
+    </style>
+</head>
+<body>
+    <div class="dashboard-container">
+        <div class="top-bar">
+            <h1>Net-Insight Monitor</h1>
+            <div class="header-actions">
+                <div class="theme-switcher">
+                    <span class="theme-switcher-label">Dark Mode</span>
+                    <label class="switch"><input type="checkbox" id="theme-toggle"><span class="slider"></span></label>
+                </div>
+                <a href="logout.php" class="logout-button">Logout</a>
+            </div>
+        </div>
+        <div class="top-info"><div class="selector-group"><label for="isp-profile-selector">View:</label><select id="isp-profile-selector"><option value="">-- Overall Summary --</option></select></div><div class="selector-group"><label>Period:</label><div class="time-period-selector"><button data-period="1" class="active">24h</button><button data-period="7">7d</button><button data-period="30">30d</button><button data-period="365">1y</button></div></div></div>
+        <div id="loader" class="loader"></div>
+        <div id="dashboard-content" class="hidden">
+            <div id="summary-view" class="hidden">
+                <h2>System-Wide Health Summary</h2>
+                <div class="grid-container" id="key-metrics-container" style="margin-bottom: 20px;">
+                    <div class="card key-metric-card"><div id="metric-total-agents" class="key-metric-value">0</div><div class="key-metric-label">Active Agents</div></div>
+                    <div class="card key-metric-card"><div id="metric-agents-issue" class="key-metric-value">0</div><div class="key-metric-label">Agents with Issues</div></div>
+                    <div class="card key-metric-card"><div id="metric-system-rtt" class="key-metric-value">0</div><div class="key-metric-label">Avg. System RTT (ms)</div></div>
+                </div>
+                <div class="grid-container"><div class="card"><h3>System-Wide ISP SLA</h3><div id="overall-sla-periods"></div><div class="download-button-container"><a id="summary-csv-download" href="generate_csv.php" download="all_agents_summary.csv" class="download-button">💾 Download All Agent Status</a></div></div></div>
+                <div class="agent-lists-container" style="margin-top: 20px;"><div class="card"><h3>Active ISP Agents</h3><ul id="isp-agent-list" class="agent-list"></ul></div><div class="card"><h3>Active Client Agents</h3><ul id="client-agent-list" class="agent-list"></ul></div></div>
+                <div class="chart-card card" style="margin-top:20px;"><h3>System-Wide Daily Averages (<span class="period-label"></span>)</h3><div class="chart-container"><canvas id="cumulativeRttChart"></canvas></div><div class="chart-container" style="margin-top:20px;"><canvas id="cumulativeSpeedChart"></canvas></div></div>
+            </div>
+            <div id="detail-view" class="hidden">
+                <h2 id="agent-name-header"></h2><div class="download-button-container"><a id="individual-csv-download" href="#" class="download-button">💾 Download Agent Data (CSV)</a></div>
+                <div class="grid-container">
+                    <div class="card">
+                        <h3>Live Status</h3>
+                        <p><span>Last Check:</span><strong id="last-checked"></strong></p>
+                        <p><span>Connectivity:</span><strong id="ping-status"></strong></p>
+                        <p><span>RTT:</span><strong id="ping-rtt"></strong></p>
+                        <p><span>Loss:</span><strong id="ping-loss"></strong></p>
+                        <p><span>Jitter:</span><strong id="ping-jitter"></strong></p>
+                        <!-- NEW: WiFi Signal display -->
+                        <p><span>WiFi Signal:</span><strong id="wifi-signal"></strong></p>
+                    </div>
+                    <div class="card">
+                        <h3>Speedtest</h3>
+                        <p><span>Download:</span><strong id="speed-dl"></strong></p>
+                        <p><span>Upload:</span><strong id="speed-ul"></strong></p>
+                        <p><span>Ping (ISP):</span><strong id="speed-ping"></strong></p>
+                    </div>
+                    <div class="card">
+                        <h3>Service Level Agreement (<span class="period-label"></span>)</h3>
+                        <div id="historical-sla-data"></div>
+                    </div>
+                </div>
+                <div class="chart-card card" style="margin-top:20px;"><h3>Historical Performance (<span class="period-label"></span>)</h3><div class="chart-container"><canvas id="rttChart"></canvas></div><div class="chart-container" style="margin-top:20px;"><canvas id="speedTestChart"></canvas></div></div>
+            </div>
+        </div>
+    </div>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    let chartInstances = {};
+    let refreshIntervalTimer;
+    let currentPeriodDays = "1";
+
+    const loader = document.getElementById('loader');
+    const profileSelector = document.getElementById('isp-profile-selector');
+    const dashboardContent = document.getElementById('dashboard-content');
+    const summaryView = document.getElementById('summary-view');
+    const detailView = document.getElementById('detail-view');
+    const periodSelector = document.querySelector('.time-period-selector');
+    const themeToggle = document.getElementById('theme-toggle');
+
+    const setText = (id, value, unit = '') => { const el = document.getElementById(id); if (el) el.textContent = (value !== null && value !== undefined && String(value).trim() !== '') ? `${String(value).trim()}${unit}` : 'N/A'; };
+    const setHtml = (id, value) => { const el = document.getElementById(id); if (el) el.innerHTML = value; };
+
+    const fetchAndUpdateDashboard = async (agentId = null, period = currentPeriodDays) => {
+        currentPeriodDays = period;
+        loader.style.display = 'block';
+        dashboardContent.classList.add('hidden');
+        let url = `get_sla_stats.php?period=${period}&_=${new Date().getTime()}`;
+        if (agentId) url += `&isp_id=${agentId}`;
+
+        try {
+            const response = await fetch(url);
+            if (response.status === 401) { window.location.href = 'login.php'; return; } // Redirect if session expired
+            if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+            const data = await response.json();
+            if (data.error) throw new Error(data.message || 'Unknown server error');
+
+            if (!profileSelector.getAttribute('data-populated')) updateProfileSelector(data.isp_profiles, agentId);
+
+            document.querySelectorAll('.time-period-selector button').forEach(b => b.classList.toggle('active', b.dataset.period === period));
+            document.querySelectorAll('.period-label').forEach(el => el.textContent = `${period} day(s)`);
+
+            if (agentId) renderDetailView(data);
+            else renderSummaryView(data);
+            
+            dashboardContent.classList.remove('hidden');
+
+            if (refreshIntervalTimer) clearInterval(refreshIntervalTimer);
+            refreshIntervalTimer = setInterval(() => fetchAndUpdateDashboard(profileSelector.value, currentPeriodDays), data.dashboard_refresh_interval_ms || 900000);
+        } catch (error) {
+            console.error("Dashboard Error:", error);
+            dashboardContent.innerHTML = `<h2 style="color:var(--red); text-align:center;">Failed to Load Dashboard</h2><p style="text-align:center;">Error: ${error.message}. Please try refreshing the page.</p>`;
+        } finally {
+            loader.style.display = 'none';
+        }
+    };
+
+    const updateProfileSelector = (profiles, selectedId) => {
+        profileSelector.innerHTML = '<option value="">-- Overall Summary --</option>';
+        (profiles || []).forEach(p => {
+            const option = document.createElement('option');
+            option.value = p.id;
+            option.textContent = `${p.agent_name} (${p.agent_identifier}) ${p.is_active ? '' : '(Inactive)'}`;
+            profileSelector.appendChild(option);
+        });
+        profileSelector.value = selectedId || "";
+        profileSelector.setAttribute('data-populated', 'true');
+    };
+    
+    const createSparkline = (data) => {
+        if (!data || data.length < 2) return '';
+        const width = 100, height = 25;
+        const maxVal = Math.max(...data);
+        const minVal = Math.min(...data);
+        const range = maxVal - minVal === 0 ? 1 : maxVal - minVal;
+        const points = data.map((d, i) => {
+            const x = (i / (data.length - 1)) * width;
+            const y = height - ((d - minVal) / range) * height;
+            return `${x},${y}`;
+        }).join(' ');
+        return `<svg viewbox="0 0 ${width} ${height}" preserveAspectRatio="none"><polyline points="${points}"/></svg>`;
+    };
+
+    const renderSummaryView = (data) => {
+        document.title = "Overall Summary - Net-Insight Monitor";
+        const slaContainer = document.getElementById('overall-sla-periods'); slaContainer.innerHTML = '';
+        (data.periods || []).forEach(p => { slaContainer.innerHTML += `<div class="sla-period-item"><div class="sla-label-percent"><span>${p.label}:</span><span>${p.achieved_percentage}%</span></div><div class="sla-progress-bar"><div class="sla-progress-bar-inner ${p.is_target_met ? 'met' : 'not-met'}" style="width: ${p.achieved_percentage}%"></div></div></div>`; });
+
+        const lists = { ISP: document.getElementById('isp-agent-list'), Client: document.getElementById('client-agent-list') };
+        Object.values(lists).forEach(l => l.innerHTML = '');
+        
+        let issueCount = 0, totalRtt = 0, rttCount = 0;
+        (data.isp_profiles || []).forEach(p => {
+            const status = data.all_agent_status[p.id];
+            const lastHeard = status ? new Date(status.timestamp) : (p.last_heard_from ? new Date(p.last_heard_from) : null);
+            const minutesSinceHeard = lastHeard ? (new Date() - lastHeard) / 60000 : Infinity;
+            let statusClass = 'unknown';
+            if (status) {
+                statusClass = status.overall_connectivity?.toLowerCase() === 'up' ? 'up' : 'down';
+                if(status.avg_rtt_ms !== null) { totalRtt += status.avg_rtt_ms; rttCount++; }
+            }
+            if (minutesSinceHeard > data.agent_stale_minutes) statusClass = 'stale';
+            if (statusClass !== 'up') issueCount++;
+
+            const connectivityText = statusClass.toUpperCase();
+            const rttText = (status?.avg_rtt_ms !== null) ? `${parseFloat(status.avg_rtt_ms).toFixed(2)}ms` : 'N/A';
+            const lossText = (status?.avg_loss_percent !== null) ? `${parseFloat(status.avg_loss_percent).toFixed(1)}%` : 'N/A';
+            const lastCheckText = lastHeard ? lastHeard.toLocaleString() : 'Never';
+            
+            const sparklineSvg = status?.sparkline_rtt ? createSparkline(status.sparkline_rtt) : '';
+
+            const li = document.createElement('li');
+            li.className = `agent-list-item status-${statusClass}`; li.dataset.id = p.id;
+            li.innerHTML = `
+                <div class="agent-header"><span class="agent-name">${p.agent_name}</span><strong title="${connectivityText}">${connectivityText}</strong></div>
+                <div class="agent-metrics-grid">
+                    <span>RTT / Loss:</span> <strong>${rttText} / ${lossText}</strong>
+                    <span>Last Check:</span> <strong style="font-size:0.9em;">${lastCheckText}</strong>
+                </div>
+                ${sparklineSvg ? `<div class="agent-sparkline" title="24h RTT Trend">${sparklineSvg}</div>` : ''}`;
+            if (lists[p.agent_type]) lists[p.agent_type].appendChild(li);
+        });
+        
+        setText('metric-total-agents', data.isp_profiles.length);
+        setHtml('metric-agents-issue', `<span class="${issueCount > 0 ? 'down' : ''}">${issueCount}</span>`);
+        setText('metric-system-rtt', rttCount > 0 ? (totalRtt/rttCount).toFixed(1) : 'N/A');
+
+        renderChart('cumulativeRttChart', { 'Avg RTT (ms)': 'avg_rtt', 'Avg Loss (%)': 'avg_loss', 'Avg Jitter (ms)': 'avg_jitter' }, data.cumulative_ping_chart_data, 'day');
+        renderChart('cumulativeSpeedChart', { 'Avg Download (Mbps)': 'avg_dl', 'Avg Upload (Mbps)': 'avg_ul' }, data.cumulative_speed_chart_data, 'day');
+        summaryView.classList.remove('hidden'); detailView.classList.add('hidden');
+    };
+    
+    const renderDetailView = (data) => {
+        document.title = `${data.current_isp_name} - Net-Insight Monitor`;
+        setText('agent-name-header', data.current_isp_name);
+        const latest = data.latest_check;
+        setText('last-checked', latest ? new Date(latest.timestamp).toLocaleString() : 'N/A');
+        setText('ping-status', latest?.overall_connectivity); setText('ping-rtt', latest?.avg_rtt_ms, ' ms'); setText('ping-loss', latest?.avg_loss_percent, ' %'); setText('ping-jitter', latest?.avg_jitter_ms, ' ms');
+        setText('speed-dl', latest?.speedtest_download_mbps, ' Mbps'); setText('speed-ul', latest?.speedtest_upload_mbps, ' Mbps');setText('speed-ping', latest?.speedtest_ping_ms, ' ms');
+
+        // NEW: Format and display WiFi signal data
+        let wifiText = 'N/A';
+        if (latest) {
+            const wifiPerc = latest.wifi_signal_percent;
+            const wifiDbm = latest.wifi_signal_dbm;
+            if (wifiPerc !== null && wifiDbm !== null) {
+                wifiText = `${wifiPerc}% (${wifiDbm} dBm)`;
+            } else if (wifiPerc !== null) {
+                wifiText = `${wifiPerc}%`;
+            } else if (wifiDbm !== null) {
+                wifiText = `${wifiDbm} dBm`;
+            }
+        }
+        setText('wifi-signal', wifiText);
+        
+        const slaContainer = document.getElementById('historical-sla-data');
+        slaContainer.innerHTML = `<h3 style="margin-bottom:10px;">SLA (Target: ${data.target_sla_percentage}%)</h3>`;
+        (data.periods || []).forEach(p => {
+            slaContainer.innerHTML += `<div class="sla-period-item">
+                <div class="sla-label-percent"><span>${p.label}:</span><span>${p.achieved_percentage}%</span></div>
+                <div class="sla-progress-bar"><div class="sla-progress-bar-inner ${p.is_target_met ? 'met' : 'not-met'}" style="width: ${p.achieved_percentage}%"></div></div>
+            </div>`;
+        });
+        
+        document.getElementById('individual-csv-download').href = `generate_csv.php?isp_id=${data.current_isp_profile_id}`;
+        
+        renderChart('rttChart', { 'Avg RTT (ms)': 'avg_rtt_ms', 'Avg Jitter (ms)': 'avg_jitter_ms', 'Packet Loss (%)': 'avg_loss_percent' }, data.rtt_chart_data, 'timestamp');
+        renderChart('speedTestChart', { 'Download (Mbps)': 'speedtest_download_mbps', 'Upload (Mbps)': 'speedtest_upload_mbps' }, data.speed_chart_data, 'timestamp');
+        summaryView.classList.add('hidden'); detailView.classList.remove('hidden');
+    };
+    
+    const renderChart = (canvasId, seriesConfig, data, xKey) => {
+        const ctx = document.getElementById(canvasId)?.getContext('2d'); if (!ctx) return;
+        if (chartInstances[canvasId]) chartInstances[canvasId].destroy();
+
+        const isDark = document.body.classList.contains('dark-mode');
+        const gridColor = isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)';
+        const textColor = isDark ? '#e0e0e0' : '#333';
+        const colors = ['#36a2eb', '#ff6384', '#ff9f40', '#4bc0c0'];
+
+        let yAxesCount = 0;
+        const datasets = Object.entries(seriesConfig).map(([label, key], index) => {
+            const isLoss = label.includes('Loss');
+            const yAxisID = isLoss ? 'y1' : 'y';
+            if(isLoss) yAxesCount++;
+            return {
+                label,
+                data: data.map(d => d[key]),
+                borderColor: colors[index % colors.length],
+                backgroundColor: colors[index % colors.length] + '33',
+                type: isLoss ? 'bar' : 'line',
+                tension: 0.3,
+                fill: !isLoss,
+                yAxisID: yAxisID,
+                order: isLoss ? 1 : 0
+            };
+        });
+
+        const chartOptions = {
+            responsive: true, maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            scales: {
+                x: {
+                    type: 'time',
+                    time: { unit: xKey === 'day' ? 'day' : 'hour', tooltipFormat: 'PPp' },
+                    grid: { color: gridColor }, ticks: { color: textColor }
+                },
+                y: {
+                    beginAtZero: true, position: 'left',
+                    grid: { color: gridColor }, ticks: { color: textColor, callback: (value) => `${value} ms` }
+                }
+            },
+            plugins: {
+                legend: { labels: { color: textColor } },
+                tooltip: { titleFont: { weight: 'bold' }, bodyFont: { size: 14 } }
+            }
+        };
+        if(yAxesCount > 0){
+             chartOptions.scales.y1 = {
+                beginAtZero: true, position: 'right',
+                grid: { drawOnChartArea: false },
+                ticks: { color: textColor, callback: (value) => `${value}%` }
+             }
+        }
+
+        chartInstances[canvasId] = new Chart(ctx, { type: 'line', data: { labels: data.map(d => d[xKey]), datasets }, options: chartOptions });
+    };
+    
+    const applyTheme = (isDark) => { document.body.classList.toggle('dark-mode', isDark); fetchAndUpdateDashboard(profileSelector.value, currentPeriodDays); };
+    
+    document.body.addEventListener('click', e => { if(e.target.closest('.agent-list-item')) { const agentId = e.target.closest('.agent-list-item').dataset.id; profileSelector.value = agentId; history.pushState({agentId}, '', `?isp_id=${agentId}`); fetchAndUpdateDashboard(agentId, currentPeriodDays); } });
+    profileSelector.addEventListener('change', e => { const agentId = e.target.value; const url = agentId ? `?isp_id=${agentId}` : './'; history.pushState({agentId}, '', url); fetchAndUpdateDashboard(agentId, currentPeriodDays); });
+    periodSelector.addEventListener('click', e => { if(e.target.tagName === 'BUTTON'){ currentPeriodDays = e.target.dataset.period; fetchAndUpdateDashboard(profileSelector.value, currentPeriodDays); }});
+    themeToggle.addEventListener('change', () => { const isDark = themeToggle.checked; localStorage.setItem('dark-mode', isDark); applyTheme(isDark); });
+    
+    const initialIsDark = localStorage.getItem('dark-mode') === 'true';
+    document.body.classList.toggle('dark-mode', initialIsDark);
+    themeToggle.checked = initialIsDark;
+    fetchAndUpdateDashboard(new URLSearchParams(window.location.search).get('isp_id'), currentPeriodDays);
+});
+</script>
+</body>
+</html>
