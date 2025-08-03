@@ -23,6 +23,12 @@ function get_nested_value($array, array $keys, $type = 'text') {
         $current = $current[$key];
     }
     if ($current === 'N/A' || $current === '' || is_null($current)) return null;
+
+    if ($type === 'text') {
+        // Sanitize text values to prevent stored XSS.
+        return htmlspecialchars((string)$current, ENT_QUOTES, 'UTF-8');
+    }
+
     return $type === 'float' ? (float)$current : ($type === 'int' ? (int)$current : $current);
 }
 
@@ -101,7 +107,8 @@ try {
     $stmt->bindValue(':st_jit', get_nested_value($input_data, ['speed_test', 'jitter_ms'], 'float'), SQLITE3_FLOAT);
     $stmt->bindValue(':wifi_perc', get_nested_value($input_data, ['wifi_summary', 'signal_percent'], 'int'), SQLITE3_INTEGER);
     $stmt->bindValue(':wifi_dbm', get_nested_value($input_data, ['wifi_summary', 'signal_dbm'], 'int'), SQLITE3_INTEGER);
-    $stmt->bindValue(':health', htmlspecialchars(get_nested_value($input_data, ['detailed_health_summary']) ?? 'UNKNOWN', ENT_QUOTES, 'UTF-8'));
+    // The get_nested_value function now handles sanitization for 'text' type.
+    $stmt->bindValue(':health', get_nested_value($input_data, ['detailed_health_summary']) ?? 'UNKNOWN');
     $stmt->bindValue(':sla_met', (get_nested_value($input_data, ['current_sla_met_status']) === 'MET' ? 1 : 0), SQLITE3_INTEGER);
 
     // 5. Execute and Finalize

@@ -19,34 +19,36 @@ function api_log($message) {
 // --- Main Logic ---
 header("Content-Type: application/json");
 
-// 1. Get and Validate Input
-$agent_identifier = trim($_GET['agent_id'] ?? '');
-if (empty($agent_identifier)) {
-    http_response_code(400); // Bad Request
-    api_log("Request Error: agent_id parameter was missing or empty.");
-    echo json_encode(['status' => 'error', 'message' => 'agent_id parameter is required.']);
+// 1. API Key Authentication
+$api_key = $_SERVER['HTTP_X_API_KEY'] ?? '';
+if (empty($api_key)) {
+    http_response_code(401);
+    api_log("Authentication Error: API key missing from X-API-KEY header.");
+    echo json_encode(['status' => 'error', 'message' => 'API key missing']);
     exit;
 }
 
-$db = null;
+$db = null; $agent_identifier_for_log = 'unknown';
 try {
-    // 2. Connect to Database and Verify Agent Exists
+    // 2. Connect to Database and Fetch Profile
     if (!file_exists($db_file)) { throw new Exception("Database file not found at {$db_file}."); }
-    $db = new SQLite3($db_file, SQLITE3_OPEN_READONLY); // Use READONLY for safety
+    $db = new SQLite3($db_file, SQLITE3_OPEN_READONLY);
     
-    $stmt = $db->prepare("SELECT id, agent_name FROM isp_profiles WHERE agent_identifier = :agent_id LIMIT 1");
-    $stmt->bindValue(':agent_id', $agent_identifier, SQLITE3_TEXT);
+    // Validate the API Key and get the profile info
+    $stmt = $db->prepare("SELECT id, agent_name, agent_identifier FROM isp_profiles WHERE api_key = :api_key LIMIT 1");
+    $stmt->bindValue(':api_key', $api_key, SQLITE3_TEXT);
     $profile = $stmt->execute()->fetchArray(SQLITE3_ASSOC);
     $stmt->close();
 
     if (!$profile) {
         http_response_code(404); // Not Found
-        api_log("Request Info: Agent identifier not found in database: '{$agent_identifier}'");
-        echo json_encode(['status' => 'error', 'message' => 'Agent profile not found.']);
+        api_log("Authentication Error: Invalid API key provided, profile not found.");
+        echo json_encode(['status' => 'error', 'message' => 'Agent profile not found for the provided API key.']);
         exit;
     }
 
-    api_log("OK: Served config to agent '{$agent_identifier}' (Profile ID: {$profile['id']})");
+    $agent_identifier_for_log = $profile['agent_identifier']; // For logging context
+    api_log("OK: Served config to agent '{$agent_identifier_for_log}' (Profile ID: {$profile['id']})");
 
     // 3. Define and Return the Configuration Payload
     // NOTE: For now, these are hardcoded. In the future, you could add columns
@@ -81,7 +83,7 @@ try {
     echo json_encode($config_payload, JSON_PRETTY_PRINT | JSON_NUMERIC_CHECK);
 
 } catch (Exception $e) {
-    api_log("FATAL ERROR for agent '{$agent_identifier}': " . $e->getMessage());
+    api_log("FATAL ERROR for agent '{$agent_identifier_for_log}': " . $e->getMessage());
     http_response_code(500);
     echo json_encode(['status' => 'error', 'message' => 'An internal server error occurred.']);
 } finally {
