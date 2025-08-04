@@ -30,65 +30,56 @@ try {
     $filename = "sla_history_{$agent_name}.csv";
     $profile_stmt->close();
 
-    // --- Fetch ALL data for the agent into a PHP array ---
+    // --- Set HTTP Headers for CSV Download ---
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename="' . $filename . '"');
+    $output = fopen('php://output', 'w');
+
+    // --- Optimized: Check for Jitter Data Existence First ---
+    // This query is lightweight and checks if there's any valid jitter data at all.
+    $jitter_check_stmt = $db->prepare("SELECT 1 FROM sla_metrics WHERE isp_profile_id = :id AND speedtest_jitter_ms IS NOT NULL AND speedtest_jitter_ms != '' LIMIT 1");
+    $jitter_check_stmt->bindValue(':id', $isp_id, SQLITE3_INTEGER);
+    $has_jitter_data = (bool) $jitter_check_stmt->execute()->fetchArray();
+    $jitter_check_stmt->close();
+
+    // --- Optimized: Stream Data Row-by-Row ---
     $data_stmt = $db->prepare("SELECT * FROM sla_metrics WHERE isp_profile_id = :id ORDER BY timestamp ASC");
     $data_stmt->bindValue(':id', $isp_id, SQLITE3_INTEGER);
     $results = $data_stmt->execute();
     if (!$results) {
         throw new Exception("Failed to retrieve metrics for the agent.");
     }
-    
-    $all_rows = [];
+
+    $is_first_row = true;
     while ($row = $results->fetchArray(SQLITE3_ASSOC)) {
-        $all_rows[] = $row;
-    }
-    $data_stmt->close();
-    $db->close();
-
-    // --- Set HTTP Headers for CSV Download ---
-    header('Content-Type: text/csv; charset=utf-8');
-    header('Content-Disposition: attachment; filename="' . $filename . '"');
-    
-    $output = fopen('php://output', 'w');
-
-    if (empty($all_rows)) {
-        // If there's no data, just output an empty file or a header row
-        fputcsv($output, ['No data available for this agent.']);
-        fclose($output);
-        exit();
-    }
-
-    // --- FIX: Dynamically determine if jitter data exists ---
-    $has_jitter_data = false;
-    foreach ($all_rows as $row) {
-        if (isset($row['speedtest_jitter_ms']) && $row['speedtest_jitter_ms'] !== null && $row['speedtest_jitter_ms'] !== '') {
-            $has_jitter_data = true;
-            break; // Found it, no need to check further
+        // On the first row, determine and write headers
+        if ($is_first_row) {
+            $headers = array_keys($row);
+            if (!$has_jitter_data) {
+                // If no jitter data exists anywhere, remove the column from the headers
+                $headers = array_filter($headers, function($header) {
+                    return $header !== 'speedtest_jitter_ms';
+                });
+            }
+            fputcsv($output, $headers);
+            $is_first_row = false;
         }
-    }
 
-    // --- Prepare Headers ---
-    $headers = array_keys($all_rows[0]);
-    if (!$has_jitter_data) {
-        // If no jitter data exists anywhere, remove the column from the headers
-        $headers = array_filter($headers, function($header) {
-            return $header !== 'speedtest_jitter_ms';
-        });
-    }
-    
-    // Write the final header row
-    fputcsv($output, $headers);
-
-    // --- Write Data Rows ---
-    foreach ($all_rows as $row) {
+        // Prepare and write the data row
         if (!$has_jitter_data) {
-            // If we are in "no jitter" mode, remove the key from the data row too
             unset($row['speedtest_jitter_ms']);
         }
         fputcsv($output, $row);
     }
-    
+
+    // If the loop never ran (no data), write a message
+    if ($is_first_row) {
+        fputcsv($output, ['No data available for this agent.']);
+    }
+
     // --- Clean up ---
+    $data_stmt->close();
+    $db->close();
     fclose($output);
     exit();
 
