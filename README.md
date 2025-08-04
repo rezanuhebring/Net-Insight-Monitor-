@@ -86,16 +86,21 @@ The interactive setup script handles all dependencies, configuration, and deploy
     - The script will automatically generate an API key for your first agent. **Copy this key and save it in a safe place.** You will need it for your first agent setup.
 
 4.  **Create a Web Admin User (CRITICAL Security Step):**
-    - After the setup script finishes, copy the `create_admin_user.php` file into the `app/` directory.
+    - The setup script does **not** automatically create a web user. You must do this manually.
+    - A template file named `create_admin_user.php.template` is included in the `central_server_package` directory.
+    - **First, copy the template to the `app` directory, renaming it:**
       ```bash
-      # You must do this from within the central_server_package directory
-      # This file is intentionally NOT included in the directory by default for safety.
-      # You need to create it manually with the content provided.
+      # Run this from the central_server_package directory
+      sudo cp ./create_admin_user.php.template ./app/create_admin_user.php
       ```
-    - Access the script from your browser to create the user:
+    - **(Optional but Recommended)** Open the new file and change the default password before running it.
+      ```bash
+      sudo nano ./app/create_admin_user.php
+      ```
+    - **Next, access the script from your browser** to create the admin user:
       - **Production:** `https://your.domain.com/create_admin_user.php`
       - **Development:** `http://<your-server-ip>:8080/create_admin_user.php`
-    - **IMMEDIATELY DELETE THE SCRIPT** from the `app/` directory after you see the success message.
+    - **Finally, IMMEDIATELY DELETE THE SCRIPT** from the `app/` directory after you see the success message. This is critical to prevent unauthorized access.
       ```bash
       sudo rm ./app/create_admin_user.php
       ```
