@@ -107,7 +107,7 @@ if [ "${MIGRATION_MODE}" = false ]; then
     sudo sqlite3 "${SQLITE_DB_FILE_HOST_PATH}" "
         PRAGMA journal_mode=WAL;
         CREATE TABLE isp_profiles (id INTEGER PRIMARY KEY AUTOINCREMENT, agent_name TEXT NOT NULL, agent_identifier TEXT NOT NULL UNIQUE, api_key TEXT UNIQUE, last_heard_from TEXT, last_reported_hostname TEXT, last_reported_source_ip TEXT, agent_type TEXT, is_active INTEGER DEFAULT 1);
-        CREATE TABLE sla_metrics (id INTEGER PRIMARY KEY AUTOINCREMENT, isp_profile_id INTEGER NOT NULL, timestamp TEXT NOT NULL, overall_connectivity TEXT, avg_rtt_ms REAL, avg_loss_percent REAL, avg_jitter_ms REAL, dns_status TEXT, dns_resolve_time_ms INTEGER, http_status TEXT, http_response_code INTEGER, http_total_time_s REAL, speedtest_status TEXT, speedtest_download_mbps REAL, speedtest_upload_mbps REAL, speedtest_ping_ms REAL, speedtest_jitter_ms REAL, wifi_signal_percent INTEGER, wifi_signal_dbm INTEGER, detailed_health_summary TEXT, sla_met_interval INTEGER, FOREIGN KEY (isp_profile_id) REFERENCES isp_profiles(id), UNIQUE(isp_profile_id, timestamp));
+        CREATE TABLE sla_metrics (id INTEGER PRIMARY KEY AUTOINCREMENT, isp_profile_id INTEGER NOT NULL, timestamp TEXT NOT NULL, overall_connectivity TEXT, avg_rtt_ms REAL, avg_loss_percent REAL, avg_jitter_ms REAL, dns_status TEXT, dns_resolve_time_ms INTEGER, http_status TEXT, http_response_code INTEGER, http_total_time_s REAL, speedtest_status TEXT, speedtest_download_mbps REAL, speedtest_upload_mbps REAL, speedtest_ping_ms REAL, speedtest_jitter_ms REAL, wifi_signal_percent INTEGER, wifi_signal_dbm INTEGER, wifi_ssid TEXT, wifi_bssid TEXT, wifi_channel INTEGER, wifi_frequency_band TEXT, wifi_radio_type TEXT, wifi_authentication TEXT, detailed_health_summary TEXT, sla_met_interval INTEGER, FOREIGN KEY (isp_profile_id) REFERENCES isp_profiles(id), UNIQUE(isp_profile_id, timestamp));
         CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
         CREATE INDEX IF NOT EXISTS idx_isp_profiles_agent_identifier ON isp_profiles (agent_identifier);
     "
@@ -127,6 +127,12 @@ else
     sudo sqlite3 "${SQLITE_DB_FILE_HOST_PATH}" "ALTER TABLE isp_profiles ADD COLUMN api_key TEXT;" >/dev/null 2>&1
     sudo sqlite3 "${SQLITE_DB_FILE_HOST_PATH}" "ALTER TABLE sla_metrics ADD COLUMN wifi_signal_percent INTEGER;" >/dev/null 2>&1
     sudo sqlite3 "${SQLITE_DB_FILE_HOST_PATH}" "ALTER TABLE sla_metrics ADD COLUMN wifi_signal_dbm INTEGER;" >/dev/null 2>&1
+    sudo sqlite3 "${SQLITE_DB_FILE_HOST_PATH}" "ALTER TABLE sla_metrics ADD COLUMN wifi_ssid TEXT;" >/dev/null 2>&1
+    sudo sqlite3 "${SQLITE_DB_FILE_HOST_PATH}" "ALTER TABLE sla_metrics ADD COLUMN wifi_bssid TEXT;" >/dev/null 2>&1
+    sudo sqlite3 "${SQLITE_DB_FILE_HOST_PATH}" "ALTER TABLE sla_metrics ADD COLUMN wifi_channel INTEGER;" >/dev/null 2>&1
+    sudo sqlite3 "${SQLITE_DB_FILE_HOST_PATH}" "ALTER TABLE sla_metrics ADD COLUMN wifi_frequency_band TEXT;" >/dev/null 2>&1
+    sudo sqlite3 "${SQLITE_DB_FILE_HOST_PATH}" "ALTER TABLE sla_metrics ADD COLUMN wifi_radio_type TEXT;" >/dev/null 2>&1
+    sudo sqlite3 "${SQLITE_DB_FILE_HOST_PATH}" "ALTER TABLE sla_metrics ADD COLUMN wifi_authentication TEXT;" >/dev/null 2>&1
     print_info "Database schema checked and updated."
 fi
 
