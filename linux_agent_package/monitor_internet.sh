@@ -136,51 +136,63 @@ fi
 if [ "$ENABLE_WIFI" = true ]; then
     log_message "Performing WiFi signal test..."
     if command -v nmcli &> /dev/null; then
-        # Use nmcli (more modern and provides dBm and signal percentage)
-        wifi_info=$(nmcli -g IN-USE,SIGNAL,SSID dev wifi | grep '^*')
-        if [ -n "$wifi_info" ]; then
-            results_map[wifi_percent]=$(echo "$wifi_info" | cut -d: -f2)
-            # nmcli does not provide dBm directly, SIGNAL is a percentage.
-            # We can try to get it from iwconfig if available.
-            log_message "WiFi signal (nmcli): ${results_map[wifi_percent]}%"
-            if command -v iwconfig &> /dev/null; then
-                wifi_interface=$(iwconfig 2>/dev/null | grep ESSID | grep -o '^[a-zA-Z0-9]*')
+        # Use nmcli as it's the modern standard and provides all necessary details.
+        # We ask for the fields we need in one go to be efficient.
+        wifi_details=$(nmcli -g IN-USE,SSID,BSSID,SIGNAL,CHAN,FREQ,RATE,SECURITY,WPA-FLAGS,RSN-FLAGS dev wifi list | grep '^*' | head -1)
+        if [ -n "$wifi_details" ]; then
+            # Safely parse the colon-delimited output from nmcli
+            IFS=':' read -r _ in_use ssid bssid signal chan freq rate security wpa_flags rsn_flags <<<"$wifi_details"
+            
+            results_map[wifi_percent]=$signal
+            results_map[wifi_ssid]=$ssid
+            results_map[wifi_bssid]=$bssid
+            results_map[wifi_channel]=$chan
+            
+            # Determine frequency band
+            if (( $(echo "$freq" | sed 's/\s*MHz//' | cut -d' ' -f1) > 5000 )); then
+                results_map[wifi_frequency_band]="5 GHz"
+            else
+                results_map[wifi_frequency_band]="2.4 GHz"
+            fi
+
+            # Determine radio type from the bit rate
+            rate_num=$(echo "$rate" | sed 's/\s*Mbit\/s//' | cut -d' ' -f1)
+            if (( rate_num > 866 )); then results_map[wifi_radio_type]="802.11ac/ax (Wi-Fi 5/6)";
+            elif (( rate_num > 300 )); then results_map[wifi_radio_type]="802.11n (Wi-Fi 4)";
+            else results_map[wifi_radio_type]="802.11g/a"; fi
+
+            # Determine authentication type
+            auth="Unknown"
+            if [[ -n "$security" ]]; then
+                if [[ "$security" == *"WPA3"* ]]; then auth="WPA3";
+                elif [[ "$security" == *"WPA2"* ]]; then auth="WPA2";
+                elif [[ "$security" == *"WPA1"* ]]; then auth="WPA1";
+                elif [[ "$security" == *"WEP"* ]]; then auth="WEP";
+                else auth=$security; fi
+                if [[ "$wpa_flags" == *"psk"* || "$rsn_flags" == *"psk"* ]]; then auth+=" (Personal)";
+                elif [[ "$wpa_flags" != "none" || "$rsn_flags" != "none" ]]; then auth+=" (Enterprise)"; fi
+            else auth="Open"; fi
+            results_map[wifi_authentication]=$auth
+
+            log_message "WiFi Details (nmcli): SSID='$ssid', BSSID='$bssid', Signal=$signal%, Chan=$chan, Freq=${results_map[wifi_frequency_band]}, Auth=$auth"
+
+            # Fallback for dBm if possible, as nmcli signal is just a percentage
+            if command -v iwconfig &> /dev/null;
+            then
+                wifi_interface=$(iwconfig 2>/dev/null | grep "ESSID:\"$ssid\"" | grep -o '^[a-zA-Z0-9]*' | head -1)
                 if [ -n "$wifi_interface" ]; then
                     dbm_val=$(iwconfig $wifi_interface | grep -o 'Signal level=[-0-9]* dBm' | grep -o '[-0-9]*')
-                    if [ -n "$dbm_val" ]; then
-                         results_map[wifi_dbm]=$dbm_val
-                         log_message "WiFi signal dBm (iwconfig): ${results_map[wifi_dbm]} dBm"
-                    fi
+                    if [ -n "$dbm_val" ]; then results_map[wifi_dbm]=$dbm_val; fi
                 fi
             fi
         else
             log_message "WiFi test: Not connected to a WiFi network (nmcli)."
         fi
-    elif command -v iwconfig &> /dev/null; then
-        # Fallback to iwconfig if nmcli is not present
-        wifi_interface=$(iwconfig 2>/dev/null | grep ESSID | grep -o '^[a-zA-Z0-9]*' | head -1)
-        if [ -n "$wifi_interface" ]; then
-            signal_line=$(iwconfig "$wifi_interface" | grep 'Link Quality')
-            if echo "$signal_line" | grep -q "Link Quality="; then
-                quality=$(echo "$signal_line" | sed -n 's/.*Link Quality=\([0-9]*\/[0-9]*\).*/\1/p')
-                if [ -n "$quality" ]; then
-                    read -r part1 part2 <<< "$(echo "$quality" | tr '/' ' ')"
-                    results_map[wifi_percent]=$(awk "BEGIN {printf \"%d\", ($part1 / $part2) * 100}")
-                    log_message "WiFi signal (iwconfig): ${results_map[wifi_percent]}%"
-                fi
-            fi
-            dbm_val=$(echo "$signal_line" | grep -o 'Signal level=[-0-9]* dBm' | grep -o '[-0-9]*')
-            if [ -n "$dbm_val" ]; then
-                 results_map[wifi_dbm]=$dbm_val
-                 log_message "WiFi signal dBm (iwconfig): ${results_map[wifi_dbm]} dBm"
-            fi
-        else
-            log_message "WiFi test: No WiFi interface found (iwconfig)."
-        fi
     else
-        log_message "WiFi test SKIPPED: No nmcli or iwconfig command found."
+        log_message "WiFi test SKIPPED: nmcli command not found. Cannot collect detailed WiFi metrics."
     fi
 fi
+
 
 
 # --- DETAILED HEALTH SUMMARY & SLA CALCULATION ---
@@ -217,8 +229,8 @@ payload=$(jq -n \
     --argjson ping_summary               "$(jq -n --arg status "${results_map[ping_status]:-N/A}" --arg rtt "${results_map[ping_rtt]:-null}" --arg loss "${results_map[ping_loss]:-null}" --arg jitter "${results_map[ping_jitter]:-null}" '{status: $status, average_rtt_ms: ($rtt | tonumber? // null), average_packet_loss_percent: ($loss | tonumber? // null), average_jitter_ms: ($jitter | tonumber? // null)}')" \
     --argjson dns_resolution             "$(jq -n --arg status "${results_map[dns_status]:-N/A}" --arg time "${results_map[dns_time]:-null}" '{status: $status, resolve_time_ms: ($time | tonumber? // null)}')" \
     --argjson http_check                 "$(jq -n --arg status "${results_map[http_status]:-N/A}" --arg code "${results_map[http_code]:-null}" --arg time "${results_map[http_time]:-null}" '{status: $status, response_code: ($code | tonumber? // null), total_time_s: ($time | tonumber? // null)}')" \
-    --argjson speed_test                 "$(jq -n --arg status "${results_map[st_status]:-SKIPPED}" --arg dl "${results_map[st_dl]:-null}" --arg ul "${results_map[st_ul]:-null}" --arg ping "${results_map[st_ping]:-null}" --arg jitter "${results_map[st_jitter]:-null}" '{status: $status, download_mbps: ($dl | tonumber? // null), upload_mbps: ($ul | tonumber? // null), ping_ms: ($ping | tonumber? // null), jitter_ms: ($jitter | tonumber? // null)}')" \
-    --argjson wifi_summary               "$(jq -n --arg dbm "${results_map[wifi_dbm]:-null}" --arg perc "${results_map[wifi_percent]:-null}" '{signal_dbm: ($dbm | tonumber? // null), signal_percent: ($perc | tonumber? // null)}')" \
+    --argjson speed_test                 "$(jq -n --arg status "${results_map[st_status]:-SKIPPED}" --arg dl "${results_map[st_dl]:-null}" --arg ul "${results_map[st_ul]:-null}" --arg ping "${results_map[st_ping]:-null}" --arg jitter "${results_map[st_jitter]:-null}" '{status: $status, download_mbps: ($dl | tonumber? // null), upload_mbps: ($ul | tonumber? // null), ping_ms: ($ping | tonumber? // null), jitter_ms: ($jitter | tonumber? // null)}' )" \
+    --argjson wifi_summary               "$(jq -n --arg dbm "${results_map[wifi_dbm]:-null}" --arg perc "${results_map[wifi_percent]:-null}" --arg ssid "${results_map[wifi_ssid]:-null}" --arg bssid "${results_map[wifi_bssid]:-null}" --arg chan "${results_map[wifi_channel]:-null}" --arg freq "${results_map[wifi_frequency_band]:-null}" --arg radio "${results_map[wifi_radio_type]:-null}" --arg auth "${results_map[wifi_authentication]:-null}" '{signal_dbm: ($dbm | tonumber? // null), signal_percent: ($perc | tonumber? // null), ssid: $ssid, bssid: $bssid, channel: ($chan | tonumber? // null), frequency_band: $freq, radio_type: $radio, authentication: $auth}')" \
     '$ARGS.named'
 )
 

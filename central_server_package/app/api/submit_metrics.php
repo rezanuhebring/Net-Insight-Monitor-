@@ -79,7 +79,7 @@ try {
     $update_stmt->close();
     
     // 4. Prepare Metrics for Insertion
-    $sql = "INSERT OR IGNORE INTO sla_metrics (isp_profile_id, timestamp, overall_connectivity, avg_rtt_ms, avg_loss_percent, avg_jitter_ms, dns_status, dns_resolve_time_ms, http_status, http_response_code, http_total_time_s, speedtest_status, speedtest_download_mbps, speedtest_upload_mbps, speedtest_ping_ms, speedtest_jitter_ms, wifi_signal_percent, wifi_signal_dbm, detailed_health_summary, sla_met_interval) VALUES (:isp_id, :ts, :conn, :rtt, :loss, :jitter, :dns_stat, :dns_time, :http_stat, :http_code, :http_time, :st_stat, :st_dl, :st_ul, :st_ping, :st_jit, :wifi_perc, :wifi_dbm, :health, :sla_met)";
+    $sql = "INSERT OR IGNORE INTO sla_metrics (isp_profile_id, timestamp, overall_connectivity, avg_rtt_ms, avg_loss_percent, avg_jitter_ms, dns_status, dns_resolve_time_ms, http_status, http_response_code, http_total_time_s, speedtest_status, speedtest_download_mbps, speedtest_upload_mbps, speedtest_ping_ms, speedtest_jitter_ms, wifi_signal_percent, wifi_signal_dbm, wifi_ssid, wifi_bssid, wifi_channel, wifi_frequency_band, wifi_radio_type, wifi_authentication, detailed_health_summary, sla_met_interval) VALUES (:isp_id, :ts, :conn, :rtt, :loss, :jitter, :dns_stat, :dns_time, :http_stat, :http_code, :http_time, :st_stat, :st_dl, :st_ul, :st_ping, :st_jit, :wifi_perc, :wifi_dbm, :wifi_ssid, :wifi_bssid, :wifi_chan, :wifi_freq, :wifi_radio, :wifi_auth, :health, :sla_met)";
     $stmt = $db->prepare($sql);
 
     // Bind all values
@@ -101,6 +101,12 @@ try {
     $stmt->bindValue(':st_jit', get_nested_value($input_data, ['speed_test', 'jitter_ms'], 'float'), SQLITE3_FLOAT);
     $stmt->bindValue(':wifi_perc', get_nested_value($input_data, ['wifi_summary', 'signal_percent'], 'int'), SQLITE3_INTEGER);
     $stmt->bindValue(':wifi_dbm', get_nested_value($input_data, ['wifi_summary', 'signal_dbm'], 'int'), SQLITE3_INTEGER);
+    $stmt->bindValue(':wifi_ssid', get_nested_value($input_data, ['wifi_summary', 'ssid']));
+    $stmt->bindValue(':wifi_bssid', get_nested_value($input_data, ['wifi_summary', 'bssid']));
+    $stmt->bindValue(':wifi_chan', get_nested_value($input_data, ['wifi_summary', 'channel'], 'int'), SQLITE3_INTEGER);
+    $stmt->bindValue(':wifi_freq', get_nested_value($input_data, ['wifi_summary', 'frequency_band']));
+    $stmt->bindValue(':wifi_radio', get_nested_value($input_data, ['wifi_summary', 'radio_type']));
+    $stmt->bindValue(':wifi_auth', get_nested_value($input_data, ['wifi_summary', 'authentication']));
     $stmt->bindValue(':health', htmlspecialchars(get_nested_value($input_data, ['detailed_health_summary']) ?? 'UNKNOWN', ENT_QUOTES, 'UTF-8'));
     $stmt->bindValue(':sla_met', (get_nested_value($input_data, ['current_sla_met_status']) === 'MET' ? 1 : 0), SQLITE3_INTEGER);
 
