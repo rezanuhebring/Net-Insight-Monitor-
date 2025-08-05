@@ -1,4 +1,20 @@
 <?php
+// API Key Fetching
+$api_keys = [];
+$db_path = '/opt/sla_monitor/app_data/net_insight_monitor.sqlite';
+if (file_exists($db_path)) {
+    try {
+        $db = new PDO('sqlite:' . $db_path);
+        $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        $stmt = $db->query('SELECT agent_name, api_key, agent_identifier FROM isp_profiles ORDER BY agent_name');
+        $api_keys = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    } catch (PDOException $e) {
+        // Do not expose database errors to the client.
+        // Log error here if a logging system was available.
+        $api_keys = []; // Ensure it's an empty array on failure.
+    }
+}
+
 // Session check: This must be at the very top of the file.
 session_start();
 if (!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true) {
@@ -89,6 +105,36 @@ if (!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true) {
                 </div>
                 <div class="grid-container"><div class="card"><h3>System-Wide ISP SLA</h3><div id="overall-sla-periods"></div><div class="download-button-container"><a id="summary-csv-download" href="generate_csv.php" download="all_agents_summary.csv" class="download-button">💾 Download All Agent Status</a></div></div></div>
                 <div class="agent-lists-container" style="margin-top: 20px;"><div class="card"><h3>Active ISP Agents</h3><ul id="isp-agent-list" class="agent-list"></ul></div><div class="card"><h3>Active Client Agents</h3><ul id="client-agent-list" class="agent-list"></ul></div></div>
+                
+                <div class="card" style="margin-top: 20px;">
+                    <h2>Agent API Keys</h2>
+                    <p>Use these keys to configure your monitoring agents.</p>
+                    <table style="width: 100%; border-collapse: collapse; color: var(--text-color);">
+                        <thead>
+                            <tr style="text-align: left; border-bottom: 1px solid var(--border-color);">
+                                <th style="padding: 8px;">Agent Name</th>
+                                <th style="padding: 8px;">Identifier</th>
+                                <th style="padding: 8px;">API Key</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php if (!empty($api_keys)): ?>
+                                <?php foreach ($api_keys as $key_info): ?>
+                                    <tr style="border-bottom: 1px solid var(--border-color);">
+                                        <td style="padding: 8px;"><?= htmlspecialchars($key_info['agent_name']) ?></td>
+                                        <td style="padding: 8px; font-family: monospace;"><?= htmlspecialchars($key_info['agent_identifier']) ?></td>
+                                        <td style="padding: 8px; font-family: monospace;"><?= htmlspecialchars($key_info['api_key']) ?></td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            <?php else: ?>
+                                <tr>
+                                    <td colspan="3" style="padding: 8px; text-align: center;">No API keys found or database could not be read.</td>
+                                </tr>
+                            <?php endif; ?>
+                        </tbody>
+                    </table>
+                </div>
+
                 <div class="chart-card card" style="margin-top:20px;"><h3>System-Wide Daily Averages (<span class="period-label"></span>)</h3><div class="chart-container"><canvas id="cumulativeRttChart"></canvas></div><div class="chart-container" style="margin-top:20px;"><canvas id="cumulativeSpeedChart"></canvas></div></div>
             </div>
             <div id="detail-view" class="hidden">
@@ -279,12 +325,15 @@ document.addEventListener('DOMContentLoaded', () => {
         
         document.getElementById('individual-csv-download').href = `generate_csv.php?isp_id=${data.current_isp_profile_id}`;
         
-        renderChart('rttChart', { 'Avg RTT (ms)': 'avg_rtt_ms', 'Avg Jitter (ms)': 'avg_jitter_ms', 'Packet Loss (%)': 'avg_loss_percent' }, data.rtt_chart_data, 'timestamp');
-        renderChart('speedTestChart', { 'Download (Mbps)': 'speedtest_download_mbps', 'Upload (Mbps)': 'speedtest_upload_mbps' }, data.speed_chart_data, 'timestamp');
+        // Determine the time unit for the x-axis based on the period
+        const timeUnit = currentPeriodDays > 1 ? 'day' : 'hour';
+
+        renderChart('rttChart', { 'Avg RTT (ms)': 'avg_rtt_ms', 'Avg Jitter (ms)': 'avg_jitter_ms', 'Packet Loss (%)': 'avg_loss_percent' }, data.rtt_chart_data, 'timestamp', timeUnit);
+        renderChart('speedTestChart', { 'Download (Mbps)': 'speedtest_download_mbps', 'Upload (Mbps)': 'speedtest_upload_mbps' }, data.speed_chart_data, 'timestamp', timeUnit);
         summaryView.classList.add('hidden'); detailView.classList.remove('hidden');
     };
     
-    const renderChart = (canvasId, seriesConfig, data, xKey) => {
+    const renderChart = (canvasId, seriesConfig, data, xKey, timeUnit = 'hour') => {
         const ctx = document.getElementById(canvasId)?.getContext('2d'); if (!ctx) return;
         if (chartInstances[canvasId]) chartInstances[canvasId].destroy();
 
@@ -317,7 +366,7 @@ document.addEventListener('DOMContentLoaded', () => {
             scales: {
                 x: {
                     type: 'time',
-                    time: { unit: xKey === 'day' ? 'day' : 'hour', tooltipFormat: 'PPp' },
+                    time: { unit: timeUnit, tooltipFormat: 'PPp' },
                     grid: { color: gridColor }, ticks: { color: textColor }
                 },
                 y: {

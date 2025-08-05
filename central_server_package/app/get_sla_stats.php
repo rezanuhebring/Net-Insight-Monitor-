@@ -74,12 +74,42 @@ try {
         if ($latest = $latest_check_stmt->execute()->fetchArray(SQLITE3_ASSOC)) { $response_data['latest_check'] = $latest; }
         $latest_check_stmt->close();
         
-        $chart_query = $db->prepare("SELECT timestamp, avg_rtt_ms, avg_loss_percent, avg_jitter_ms, speedtest_download_mbps, speedtest_upload_mbps, speedtest_status FROM sla_metrics WHERE isp_profile_id = :id AND timestamp >= :start_date ORDER BY timestamp ASC");
+        // --- DYNAMIC CHART QUERY ---
+        // If period is > 1 day, we aggregate by day. Otherwise, we show granular data.
+        if ($period_days > 1) {
+            $chart_query = $db->prepare("
+                SELECT 
+                    strftime('%Y-%m-%d', timestamp) as timestamp, 
+                    AVG(avg_rtt_ms) as avg_rtt_ms, 
+                    AVG(avg_loss_percent) as avg_loss_percent, 
+                    AVG(avg_jitter_ms) as avg_jitter_ms, 
+                    AVG(speedtest_download_mbps) as speedtest_download_mbps, 
+                    AVG(speedtest_upload_mbps) as speedtest_upload_mbps,
+                    'COMPLETED' as speedtest_status -- Assume completed for aggregated speed data
+                FROM sla_metrics 
+                WHERE isp_profile_id = :id AND timestamp >= :start_date 
+                GROUP BY strftime('%Y-%m-%d', timestamp)
+                ORDER BY timestamp ASC
+            ");
+        } else {
+            $chart_query = $db->prepare("
+                SELECT 
+                    timestamp, avg_rtt_ms, avg_loss_percent, avg_jitter_ms, 
+                    speedtest_download_mbps, speedtest_upload_mbps, speedtest_status 
+                FROM sla_metrics 
+                WHERE isp_profile_id = :id AND timestamp >= :start_date 
+                ORDER BY timestamp ASC
+            ");
+        }
         $chart_query->bindValue(':id', $current_isp_profile_id, SQLITE3_INTEGER); $chart_query->bindValue(':start_date', $start_date_iso);
         $chart_result = $chart_query->execute();
         while($row = $chart_result->fetchArray(SQLITE3_ASSOC)) {
             $response_data['rtt_chart_data'][] = $row;
-            if ($row['speedtest_status'] === 'COMPLETED') $response_data['speed_chart_data'][] = $row;
+            // For aggregated data, speedtest_status is always 'COMPLETED' by our query
+            // For granular data, we check the actual status
+            if ($row['speedtest_status'] === 'COMPLETED') {
+                $response_data['speed_chart_data'][] = $row;
+            }
         }
         $chart_query->close();
     } else {
