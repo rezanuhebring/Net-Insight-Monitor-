@@ -84,7 +84,11 @@ try {
     $ProfileConfig = @{}
     try {
         Write-Log -Message "Fetching profile from: $CentralProfileConfigUrl"
-        $WebRequest = Invoke-WebRequest -Uri $CentralProfileConfigUrl -Method Get -TimeoutSec 10 -UseBasicParsing
+        # Add the API key header for authenticated access
+        $ApiHeaders = @{}
+        if ($CENTRAL_API_KEY) { $ApiHeaders.Add("X-API-KEY", $CENTRAL_API_KEY) }
+        
+        $WebRequest = Invoke-WebRequest -Uri $CentralProfileConfigUrl -Method Get -TimeoutSec 10 -UseBasicParsing -Headers $ApiHeaders
         if ($WebRequest.StatusCode -eq 200) { $ProfileConfig = $WebRequest.Content | ConvertFrom-Json; Write-Log -Message "Successfully fetched profile config." }
     } catch { Write-Log -Level WARN -Message "Could not fetch profile config, will use local settings. Error: $($_.Exception.Message)" }
 

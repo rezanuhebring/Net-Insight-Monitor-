@@ -49,7 +49,8 @@ if [ ${#PING_HOSTS[@]} -eq 0 ]; then log_message "WARN: PING_HOSTS array not def
 
 # --- Fetch Profile & Thresholds from Central Server ---
 CENTRAL_PROFILE_CONFIG_URL="${CENTRAL_API_URL/submit_metrics.php/get_profile_config.php}?agent_id=${AGENT_IDENTIFIER}"
-_profile_json_from_central=$(curl -s -m 10 -G "$CENTRAL_PROFILE_CONFIG_URL")
+# Add the API key header for authenticated access to the config endpoint
+_profile_json_from_central=$(curl -s -m 10 -G --header "X-API-KEY: ${CENTRAL_API_KEY}" "$CENTRAL_PROFILE_CONFIG_URL")
 if [ -n "$_profile_json_from_central" ] && echo "$_profile_json_from_central" | jq -e . > /dev/null 2>&1; then
     log_message "Successfully fetched profile config from central server."
     RTT_THRESHOLD_DEGRADED=$(echo "$_profile_json_from_central" | jq -r ".rtt_degraded // 100")

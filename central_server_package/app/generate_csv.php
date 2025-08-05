@@ -2,8 +2,15 @@
 // generate_csv.php - FINAL PRODUCTION VERSION
 // This script dynamically includes the jitter column only if data exists.
 
+// --- Session Check ---
+session_start();
+if (!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true) {
+    http_response_code(401); // Unauthorized
+    die("Access denied. Please log in.");
+}
+
 // --- Configuration ---
-$db_file = '/opt/sla_monitor/central_sla_data.sqlite';
+$db_file = '/opt/sla_monitor/app_data/net_insight_monitor.sqlite';
 
 // --- Security and Input Validation ---
 if (!isset($_GET['isp_id']) || !filter_var($_GET['isp_id'], FILTER_VALIDATE_INT)) {

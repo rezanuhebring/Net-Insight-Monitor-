@@ -3,11 +3,21 @@
 // Enhanced to provide a summary of all agent statuses and detailed data in one call.
 // System-wide SLA is now calculated for ISP-only agents.
 
+// --- Session Check ---
+session_start();
+if (!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true) {
+    http_response_code(401); // Unauthorized
+    // Provide a JSON error response instead of just dying.
+    header('Content-Type: application/json');
+    echo json_encode(['error' => 'Access denied. Please log in.']);
+    exit;
+}
+
 ini_set('display_errors', 0); // Never display errors on a JSON endpoint
 ini_set('log_errors', 1);
 
 // --- Configuration ---
-$db_file = '/opt/sla_monitor/central_sla_data.sqlite';
+$db_file = '/opt/sla_monitor/app_data/net_insight_monitor.sqlite';
 $config_file_path_central = '/opt/sla_monitor/sla_config.env';
 $EXPECTED_INTERVAL_MINUTES = 15; // How often do you expect agents to check in?
 

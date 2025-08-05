@@ -2,6 +2,16 @@
 // get_profile_config.php - Net-Insight-Monitor API Endpoint
 // V3 - Provides centralized configuration thresholds to agents.
 
+// --- Session Check ---
+session_start();
+if (!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true) {
+    http_response_code(401); // Unauthorized
+    // Provide a JSON error response.
+    header('Content-Type: application/json');
+    echo json_encode(['status' => 'error', 'message' => 'Access denied. Please log in.']);
+    exit;
+}
+
 ini_set('display_errors', 0);
 ini_set('log_errors', 1);
 ini_set('error_log', '/var/log/api.log'); // Log PHP errors to a dedicated file
