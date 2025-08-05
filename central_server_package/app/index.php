@@ -28,6 +28,8 @@ if (!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true) {
     <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Net-Insight Monitor</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js" defer></script>
     <style>
         :root { --bg-color: #f0f2f5; --card-bg: #ffffff; --text-color: #333; --header-color: #1a237e; --border-color: #e0e0e0; --link-color: #007bff; --shadow-color: rgba(0,0,0,0.1); --green: #28a745; --red: #dc3545; --orange: #fd7e14; --grey: #6c757d; --progress-bg: #e9ecef;}
         .dark-mode { --bg-color: #121212; --card-bg: #1e1e1e; --text-color: #e0e0e0; --header-color: #bb86fc; --border-color: #444; --link-color: #bb86fc; --shadow-color: rgba(0,0,0,0.4); --progress-bg: #333; }
@@ -68,6 +70,8 @@ if (!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true) {
         .card h3 { margin-top: 0; padding-bottom: 10px; font-size: 1.2em; border-bottom: 1px solid var(--border-color); }
         .card p { margin: 10px 0; font-size: 1em; display: flex; justify-content: space-between; } .card strong { font-weight: 600; }
         .chart-card { grid-column: 1 / -1; }
+        .chart-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .reset-zoom-btn { padding: 5px 10px; font-size: 0.8em; background-color: var(--grey); color: white; border: none; border-radius: 4px; cursor: pointer; }
         .chart-container { width: 100%; height: 350px; }
         .key-metric-card { text-align: center; }
         .key-metric-value { font-size: 2.5em; font-weight: 700; color: var(--header-color); }
@@ -135,7 +139,14 @@ if (!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true) {
                     </table>
                 </div>
 
-                <div class="chart-card card" style="margin-top:20px;"><h3>System-Wide Daily Averages (<span class="period-label"></span>)</h3><div class="chart-container"><canvas id="cumulativeRttChart"></canvas></div><div class="chart-container" style="margin-top:20px;"><canvas id="cumulativeSpeedChart"></canvas></div></div>
+                <div class="chart-card card" style="margin-top:20px;">
+                    <div class="chart-header">
+                        <h3>System-Wide Daily Averages (<span class="period-label"></span>)</h3>
+                        <button class="reset-zoom-btn" data-chart="cumulativeRttChart,cumulativeSpeedChart">Reset Zoom</button>
+                    </div>
+                    <div class="chart-container"><canvas id="cumulativeRttChart"></canvas></div>
+                    <div class="chart-container" style="margin-top:20px;"><canvas id="cumulativeSpeedChart"></canvas></div>
+                </div>
             </div>
             <div id="detail-view" class="hidden">
                 <h2 id="agent-name-header"></h2><div class="download-button-container"><a id="individual-csv-download" href="#" class="download-button">💾 Download Agent Data (CSV)</a></div>
@@ -161,7 +172,14 @@ if (!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true) {
                         <div id="historical-sla-data"></div>
                     </div>
                 </div>
-                <div class="chart-card card" style="margin-top:20px;"><h3>Historical Performance (<span class="period-label"></span>)</h3><div class="chart-container"><canvas id="rttChart"></canvas></div><div class="chart-container" style="margin-top:20px;"><canvas id="speedTestChart"></canvas></div></div>
+                <div class="chart-card card" style="margin-top:20px;">
+                    <div class="chart-header">
+                        <h3>Historical Performance (<span class="period-label"></span>)</h3>
+                        <button class="reset-zoom-btn" data-chart="rttChart,speedTestChart">Reset Zoom</button>
+                    </div>
+                    <div class="chart-container"><canvas id="rttChart"></canvas></div>
+                    <div class="chart-container" style="margin-top:20px;"><canvas id="speedTestChart"></canvas></div>
+                </div>
             </div>
         </div>
     </div>
@@ -376,7 +394,11 @@ document.addEventListener('DOMContentLoaded', () => {
             },
             plugins: {
                 legend: { labels: { color: textColor } },
-                tooltip: { titleFont: { weight: 'bold' }, bodyFont: { size: 14 } }
+                tooltip: { titleFont: { weight: 'bold' }, bodyFont: { size: 14 } },
+                zoom: {
+                    pan: { enabled: true, mode: 'x' },
+                    zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' }
+                }
             }
         };
         if(yAxesCount > 0){
@@ -392,7 +414,22 @@ document.addEventListener('DOMContentLoaded', () => {
     
     const applyTheme = (isDark) => { document.body.classList.toggle('dark-mode', isDark); fetchAndUpdateDashboard(profileSelector.value, currentPeriodDays); };
     
-    document.body.addEventListener('click', e => { if(e.target.closest('.agent-list-item')) { const agentId = e.target.closest('.agent-list-item').dataset.id; profileSelector.value = agentId; history.pushState({agentId}, '', `?isp_id=${agentId}`); fetchAndUpdateDashboard(agentId, currentPeriodDays); } });
+    document.body.addEventListener('click', e => {
+        if (e.target.closest('.agent-list-item')) {
+            const agentId = e.target.closest('.agent-list-item').dataset.id;
+            profileSelector.value = agentId;
+            history.pushState({ agentId }, '', `?isp_id=${agentId}`);
+            fetchAndUpdateDashboard(agentId, currentPeriodDays);
+        }
+        if (e.target.classList.contains('reset-zoom-btn')) {
+            const chartIds = e.target.dataset.chart.split(',');
+            chartIds.forEach(id => {
+                if (chartInstances[id]) {
+                    chartInstances[id].resetZoom();
+                }
+            });
+        }
+    });
     profileSelector.addEventListener('change', e => { const agentId = e.target.value; const url = agentId ? `?isp_id=${agentId}` : './'; history.pushState({agentId}, '', url); fetchAndUpdateDashboard(agentId, currentPeriodDays); });
     periodSelector.addEventListener('click', e => { if(e.target.tagName === 'BUTTON'){ currentPeriodDays = e.target.dataset.period; fetchAndUpdateDashboard(profileSelector.value, currentPeriodDays); }});
     themeToggle.addEventListener('change', () => { const isDark = themeToggle.checked; localStorage.setItem('dark-mode', isDark); applyTheme(isDark); });
