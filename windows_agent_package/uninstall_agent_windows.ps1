@@ -17,8 +17,8 @@ if (-Not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 Write-Host "Starting Windows SLA Monitor Agent Uninstallation..." -ForegroundColor Yellow
 
 # --- Configuration ---
-$AgentInstallDir = "C:\SLA_Monitor_Agent"
-$TaskName = "InternetSLAMonitorAgent"
+$AgentInstallDir = "C:\NetInsightAgent"
+$TaskName = "NetInsightMonitorAgent"
 
 # --- 1. Stop and Remove Scheduled Task ---
 Write-Host "Removing Scheduled Task '$TaskName'..."
@@ -50,7 +50,7 @@ if (Test-Path $AgentInstallDir) {
 }
 
 # --- 3. Remove Lock File (just in case) ---
-$LockFile = Join-Path -Path $env:TEMP -ChildPath "sla_monitor_agent.lock"
+$LockFile = Join-Path -Path $env:TEMP -ChildPath "net_insight_agent.lock"
 if (Test-Path $LockFile) { Remove-Item $LockFile -Force -ErrorAction SilentlyContinue }
 
 
