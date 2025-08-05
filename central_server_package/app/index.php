@@ -286,8 +286,8 @@ document.addEventListener('DOMContentLoaded', () => {
         setHtml('metric-agents-issue', `<span class="${issueCount > 0 ? 'down' : ''}">${issueCount}</span>`);
         setText('metric-system-rtt', rttCount > 0 ? (totalRtt/rttCount).toFixed(1) : 'N/A');
 
-        renderChart('cumulativeRttChart', { 'Avg RTT (ms)': 'avg_rtt', 'Avg Loss (%)': 'avg_loss', 'Avg Jitter (ms)': 'avg_jitter' }, data.cumulative_ping_chart_data, 'day');
-        renderChart('cumulativeSpeedChart', { 'Avg Download (Mbps)': 'avg_dl', 'Avg Upload (Mbps)': 'avg_ul' }, data.cumulative_speed_chart_data, 'day');
+        renderChart('cumulativeRttChart', { 'Avg RTT (ms)': 'avg_rtt', 'Avg Loss (%)': 'avg_loss', 'Avg Jitter (ms)': 'avg_jitter' }, data.cumulative_ping_chart_data, 'day', 'day', 'ms');
+        renderChart('cumulativeSpeedChart', { 'Avg Download (Mbps)': 'avg_dl', 'Avg Upload (Mbps)': 'avg_ul' }, data.cumulative_speed_chart_data, 'day', 'day', 'Mbps');
         summaryView.classList.remove('hidden'); detailView.classList.add('hidden');
     };
     
@@ -328,12 +328,12 @@ document.addEventListener('DOMContentLoaded', () => {
         // Determine the time unit for the x-axis based on the period
         const timeUnit = currentPeriodDays > 1 ? 'day' : 'hour';
 
-        renderChart('rttChart', { 'Avg RTT (ms)': 'avg_rtt_ms', 'Avg Jitter (ms)': 'avg_jitter_ms', 'Packet Loss (%)': 'avg_loss_percent' }, data.rtt_chart_data, 'timestamp', timeUnit);
-        renderChart('speedTestChart', { 'Download (Mbps)': 'speedtest_download_mbps', 'Upload (Mbps)': 'speedtest_upload_mbps' }, data.speed_chart_data, 'timestamp', timeUnit);
+        renderChart('rttChart', { 'Avg RTT (ms)': 'avg_rtt_ms', 'Avg Jitter (ms)': 'avg_jitter_ms', 'Packet Loss (%)': 'avg_loss_percent' }, data.rtt_chart_data, 'timestamp', timeUnit, 'ms');
+        renderChart('speedTestChart', { 'Download (Mbps)': 'speedtest_download_mbps', 'Upload (Mbps)': 'speedtest_upload_mbps' }, data.speed_chart_data, 'timestamp', timeUnit, 'Mbps');
         summaryView.classList.add('hidden'); detailView.classList.remove('hidden');
     };
     
-    const renderChart = (canvasId, seriesConfig, data, xKey, timeUnit = 'hour') => {
+    const renderChart = (canvasId, seriesConfig, data, xKey, timeUnit = 'hour', yAxisUnit = 'ms') => {
         const ctx = document.getElementById(canvasId)?.getContext('2d'); if (!ctx) return;
         if (chartInstances[canvasId]) chartInstances[canvasId].destroy();
 
@@ -371,7 +371,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 },
                 y: {
                     beginAtZero: true, position: 'left',
-                    grid: { color: gridColor }, ticks: { color: textColor, callback: (value) => `${value} ms` }
+                    grid: { color: gridColor }, ticks: { color: textColor, callback: (value) => `${value} ${yAxisUnit}` }
                 }
             },
             plugins: {
