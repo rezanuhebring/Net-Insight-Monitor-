@@ -1,4 +1,11 @@
 <?php
+// Session check: This must be at the very top of the file.
+session_start();
+if (!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true) {
+    header('location: login.php');
+    exit;
+}
+
 // API Key Fetching
 $api_keys = [];
 $db_path = '/opt/sla_monitor/app_data/net_insight_monitor.sqlite';
@@ -13,13 +20,6 @@ if (file_exists($db_path)) {
         // Log error here if a logging system was available.
         $api_keys = []; // Ensure it's an empty array on failure.
     }
-}
-
-// Session check: This must be at the very top of the file.
-session_start();
-if (!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true) {
-    header('location: login.php');
-    exit;
 }
 ?>
 <!DOCTYPE html>
