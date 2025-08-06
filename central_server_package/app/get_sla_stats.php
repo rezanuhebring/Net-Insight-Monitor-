@@ -52,7 +52,9 @@ try {
     $db = new SQLite3($db_file, SQLITE3_OPEN_READONLY);
 
     $profiles_result = $db->query("SELECT id, agent_name, agent_identifier, agent_type, is_active, last_heard_from FROM isp_profiles WHERE is_active = 1 ORDER BY agent_type, agent_name");
-    while ($profile = $profiles_result->fetchArray(SQLITE3_ASSOC)) { $response_data['isp_profiles'][] = $profile; }
+    while ($profile = $profiles_result->fetchArray(SQLITE3_ASSOC)) { 
+        $response_data['isp_profiles'][] = $profile; 
+    }
 
     $current_isp_profile_id = filter_input(INPUT_GET, 'isp_id', FILTER_VALIDATE_INT);
     $period_days = filter_input(INPUT_GET, 'period', FILTER_VALIDATE_INT) ?: 1;

@@ -64,7 +64,7 @@ try {
     
     initialize_database($db);
 
-    // 1. API Key Authentication
+    // 1. API Key Authentication & Agent Identification
     $api_key = $_SERVER['HTTP_X_API_KEY'] ?? '';
     if (empty($api_key)) {
         http_response_code(401); api_log("Auth Error: Missing API key.");
@@ -72,17 +72,18 @@ try {
         exit;
     }
 
-    $stmt_profile = $db->prepare("SELECT id FROM isp_profiles WHERE api_key = :api_key LIMIT 1");
-    $stmt_profile->bindValue(':api_key', $api_key, SQLITE3_TEXT);
-    $profile_row = $stmt_profile->execute()->fetchArray(SQLITE3_ASSOC);
-    $stmt_profile->close();
-    
-    if (!$profile_row) {
-        http_response_code(403); api_log("Auth Error: Invalid API key.");
+    // Authenticate the key against a known valid key.
+    // This can be the first profile's key or a dedicated one.
+    $stmt_auth = $db->prepare("SELECT id FROM isp_profiles WHERE api_key = :api_key LIMIT 1");
+    $stmt_auth->bindValue(':api_key', $api_key, SQLITE3_TEXT);
+    $auth_profile = $stmt_auth->execute()->fetchArray(SQLITE3_ASSOC);
+    $stmt_auth->close();
+
+    if (!$auth_profile) {
+        http_response_code(403); api_log("Auth Error: Invalid API key provided.");
         echo json_encode(['status' => 'error', 'message' => 'Invalid API key']);
         exit;
     }
-    $isp_profile_id = (int)$profile_row['id'];
 
     // 2. Process Input Data
     $input_data = json_decode(file_get_contents('php://input'), true);
@@ -98,13 +99,49 @@ try {
         echo json_encode(['status' => 'error', 'message' => 'Agent hostname is required.']);
         exit;
     }
+    
+    $agent_identifier = htmlspecialchars($input_data['agent_identifier'] ?? $agent_hostname, ENT_QUOTES, 'UTF-8');
+    $agent_type = htmlspecialchars($input_data['agent_type'] ?? 'Client', ENT_QUOTES, 'UTF-8');
+    $now_utc = gmdate("Y-m-d\TH:i:s\Z");
 
     $db->exec('BEGIN IMMEDIATE TRANSACTION');
 
-    // 3. Register or Update Agent
-    $now_utc = gmdate("Y-m-d\TH:i:s\Z");
+    // 3. Find or Create ISP Profile based on Agent Hostname
+    $stmt_profile = $db->prepare("SELECT id FROM isp_profiles WHERE agent_name = :agent_name LIMIT 1");
+    $stmt_profile->bindValue(':agent_name', $agent_hostname, SQLITE3_TEXT);
+    $profile_row = $stmt_profile->execute()->fetchArray(SQLITE3_ASSOC);
+    $stmt_profile->close();
+
+    $isp_profile_id = null;
+    if ($profile_row) {
+        $isp_profile_id = (int)$profile_row['id'];
+        // Update last heard from timestamp
+        $update_profile_stmt = $db->prepare("UPDATE isp_profiles SET last_heard_from = :now, agent_type = :type WHERE id = :id");
+        $update_profile_stmt->bindValue(':now', $now_utc, SQLITE3_TEXT);
+        $update_profile_stmt->bindValue(':type', $agent_type, SQLITE3_TEXT);
+        $update_profile_stmt->bindValue(':id', $isp_profile_id, SQLITE3_INTEGER);
+        $update_profile_stmt->execute();
+        $update_profile_stmt->close();
+    } else {
+        // Profile not found, create a new one
+        api_log("Profile for '{$agent_hostname}' not found. Creating a new profile.");
+        $insert_profile_stmt = $db->prepare(
+            "INSERT INTO isp_profiles (agent_name, agent_identifier, agent_type, api_key, is_active, last_heard_from) 
+             VALUES (:agent_name, :agent_identifier, :agent_type, :api_key, 1, :now)"
+        );
+        $insert_profile_stmt->bindValue(':agent_name', $agent_hostname, SQLITE3_TEXT);
+        $insert_profile_stmt->bindValue(':agent_identifier', $agent_identifier, SQLITE3_TEXT);
+        $insert_profile_stmt->bindValue(':agent_type', $agent_type, SQLITE3_TEXT);
+        $insert_profile_stmt->bindValue(':api_key', $api_key, SQLITE3_TEXT); // Use the submitted key for the new profile
+        $insert_profile_stmt->bindValue(':now', $now_utc, SQLITE3_TEXT);
+        $insert_profile_stmt->execute();
+        $isp_profile_id = $db->lastInsertRowID();
+        $insert_profile_stmt->close();
+        api_log("New profile created for '{$agent_hostname}' with ID {$isp_profile_id}.");
+    }
+
+    // 4. Register or Update Agent (in the 'agents' table)
     $agent_source_ip = filter_var($input_data['agent_source_ip'] ?? 'invalid', FILTER_VALIDATE_IP) ?: 'invalid';
-    $agent_type = htmlspecialchars($input_data['agent_type'] ?? 'Client', ENT_QUOTES, 'UTF-8');
 
     $stmt_agent = $db->prepare("SELECT id FROM agents WHERE isp_profile_id = :isp_id AND agent_hostname = :hostname");
     $stmt_agent->bindValue(':isp_id', $isp_profile_id, SQLITE3_INTEGER);
