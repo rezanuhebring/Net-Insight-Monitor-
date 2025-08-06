@@ -123,12 +123,17 @@ try {
                 p.agent_name, 
                 p.agent_type, 
                 p.last_heard_from,
-                (SELECT sm.detailed_health_summary FROM sla_metrics sm WHERE sm.isp_profile_id = p.id ORDER BY sm.timestamp DESC LIMIT 1) as last_health_status,
-                (SELECT sm.timestamp FROM sla_metrics sm WHERE sm.isp_profile_id = p.id ORDER BY sm.timestamp DESC LIMIT 1) as last_check_in_timestamp
+                sm.timestamp,
+                sm.overall_connectivity,
+                sm.avg_rtt_ms,
+                sm.avg_loss_percent
             FROM 
                 isp_profiles p
+            LEFT JOIN 
+                sla_metrics sm ON p.id = sm.isp_profile_id
             WHERE 
                 p.is_active = 1
+                AND sm.timestamp = (SELECT MAX(timestamp) FROM sla_metrics WHERE isp_profile_id = p.id)
             ORDER BY 
                 p.agent_name ASC
         ");
@@ -154,7 +159,7 @@ try {
             $sparkline_query->close();
             
             $agent['sparkline_rtt'] = $rtt_values;
-            $all_agent_status[] = $agent;
+            $all_agent_status[$agent['id']] = $agent;
         }
         $response_data['all_agent_status'] = $all_agent_status;
 
