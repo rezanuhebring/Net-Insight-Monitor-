@@ -116,27 +116,50 @@ try {
         $chart_query->close();
     } else {
         // --- OVERALL SUMMARY VIEW ---
-        // Get latest status for all active agents
-        $all_status_query = $db->query("SELECT sm.*, ip.last_heard_from FROM sla_metrics sm INNER JOIN (SELECT isp_profile_id, MAX(id) as max_id FROM sla_metrics GROUP BY isp_profile_id) as latest ON sm.isp_profile_id = latest.isp_profile_id AND sm.id = latest.max_id JOIN isp_profiles ip ON sm.isp_profile_id = ip.id WHERE ip.is_active = 1");
-        while ($status = $all_status_query->fetchArray(SQLITE3_ASSOC)) { 
-            $response_data['all_agent_status'][$status['isp_profile_id']] = $status; 
-            // Initialize sparkline data array
-            $response_data['all_agent_status'][$status['isp_profile_id']]['sparkline_rtt'] = [];
-        }
-        
-        // **NEW**: Get recent RTT data for sparklines (last 24 hours)
-        $sparkline_date = (new DateTime("-1 day", new DateTimeZone("UTC")))->format("Y-m-d\TH:i:s\Z");
-        $sparkline_query = $db->prepare("SELECT isp_profile_id, avg_rtt_ms FROM sla_metrics WHERE timestamp >= :start_date ORDER BY timestamp ASC");
-        $sparkline_query->bindValue(':start_date', $sparkline_date);
-        $sparkline_result = $sparkline_query->execute();
-        while($row = $sparkline_result->fetchArray(SQLITE3_ASSOC)) {
-            if (isset($response_data['all_agent_status'][$row['isp_profile_id']])) {
-                $response_data['all_agent_status'][$row['isp_profile_id']]['sparkline_rtt'][] = $row['avg_rtt_ms'];
-            }
-        }
-        $sparkline_query->close();
+        // This view now provides a list of all agents and their individual summary data.
+        $all_agents_query = $db->query("
+            SELECT 
+                p.id, 
+                p.agent_name, 
+                p.agent_type, 
+                p.last_heard_from,
+                (SELECT sm.detailed_health_summary FROM sla_metrics sm WHERE sm.isp_profile_id = p.id ORDER BY sm.timestamp DESC LIMIT 1) as last_health_status,
+                (SELECT sm.timestamp FROM sla_metrics sm WHERE sm.isp_profile_id = p.id ORDER BY sm.timestamp DESC LIMIT 1) as last_check_in_timestamp
+            FROM 
+                isp_profiles p
+            WHERE 
+                p.is_active = 1
+            ORDER BY 
+                p.agent_name ASC
+        ");
 
-        // (Cumulative chart queries remain the same)
+        $all_agent_status = [];
+        while ($agent = $all_agents_query->fetchArray(SQLITE3_ASSOC)) {
+            // For each agent, get the last 24 hours of RTT for a sparkline
+            $sparkline_query = $db->prepare("
+                SELECT avg_rtt_ms 
+                FROM sla_metrics 
+                WHERE isp_profile_id = :id AND timestamp >= :start_date 
+                ORDER BY timestamp ASC
+            ");
+            $sparkline_date = (new DateTime("-1 day", new DateTimeZone("UTC")))->format("Y-m-d\TH:i:s\Z");
+            $sparkline_query->bindValue(':id', $agent['id'], SQLITE3_INTEGER);
+            $sparkline_query->bindValue(':start_date', $sparkline_date);
+            
+            $sparkline_result = $sparkline_query->execute();
+            $rtt_values = [];
+            while ($row = $sparkline_result->fetchArray(SQLITE3_ASSOC)) {
+                $rtt_values[] = $row['avg_rtt_ms'];
+            }
+            $sparkline_query->close();
+            
+            $agent['sparkline_rtt'] = $rtt_values;
+            $all_agent_status[] = $agent;
+        }
+        $response_data['all_agent_status'] = $all_agent_status;
+
+        // The cumulative charts are now for the overall system health, not per-agent.
+        // This remains as a system-wide average view.
         $cumulative_ping_stmt = $db->prepare("SELECT strftime('%Y-%m-%d', timestamp) as day, AVG(avg_rtt_ms) as avg_rtt, AVG(avg_loss_percent) as avg_loss, AVG(avg_jitter_ms) as avg_jitter FROM sla_metrics WHERE timestamp >= :start_date GROUP BY day ORDER BY day ASC");
         $cumulative_ping_stmt->bindValue(':start_date', $start_date_iso);
         $ping_res = $cumulative_ping_stmt->execute();
